@@ -1,6 +1,6 @@
 {
   "version": 2,
-  "buildCommand": "cp composer-vercel.json composer.json && composer install --no-dev --optimize-autoloader",
+  "buildCommand": "echo 'Using existing vendor directory'",
   "outputDirectory": ".",
   "functions": {
     "api/index.php": {
