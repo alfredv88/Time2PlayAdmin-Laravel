@@ -1,12 +1,11 @@
 {
   "version": 2,
-  "buildCommand": "echo 'Using existing vendor directory'",
-  "outputDirectory": ".",
-  "functions": {
-    "api/index.php": {
-      "runtime": "vercel-php@0.7.0"
+  "builds": [
+    {
+      "src": "api/index.php",
+      "use": "@vercel/php"
     }
-  },
+  ],
   "routes": [
     {
       "src": "/(.*)",
