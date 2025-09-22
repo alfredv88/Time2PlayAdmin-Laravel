@@ -42,3 +42,4 @@ El proyecto utiliza Firebase para:
 ✅ Todos los errores han sido corregidos
 ✅ Listo para producción
 ✅ Configurado para Vercel# Time2PlayAdminv1
+# Time2PlayAdmin
