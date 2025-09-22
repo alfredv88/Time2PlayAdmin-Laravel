@@ -8,14 +8,14 @@
   <!-- Google Font: Source Sans Pro -->
   <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Source+Sans+Pro:300,400,400i,700&display=fallback">
   <!-- Font Awesome -->
-  <link rel="stylesheet" href="{{ url('public/assets/plugins/fontawesome-free/css/all.min.css') }}">
+  <link rel="stylesheet" href="{{ url('assets/plugins/fontawesome-free/css/all.min.css') }}">
   <!-- DataTables -->
-  <link rel="stylesheet" href="{{ url('public/assets/plugins/datatables-bs4/css/dataTables.bootstrap4.min.css') }}">
-  <link rel="stylesheet" href="{{ url('public/assets/plugins/datatables-responsive/css/responsive.bootstrap4.min.css') }}">
-  <link rel="stylesheet" href="{{ url('public/assets/plugins/datatables-buttons/css/buttons.bootstrap4.min.css') }}">
+  <link rel="stylesheet" href="{{ url('assets/plugins/datatables-bs4/css/dataTables.bootstrap4.min.css') }}">
+  <link rel="stylesheet" href="{{ url('assets/plugins/datatables-responsive/css/responsive.bootstrap4.min.css') }}">
+  <link rel="stylesheet" href="{{ url('assets/plugins/datatables-buttons/css/buttons.bootstrap4.min.css') }}">
   <link rel="stylesheet" href="https://maxcdn.bootstrapcdn.com/font-awesome/4.7.0/css/font-awesome.min.css">
   <!-- Theme style -->
-  <link rel="stylesheet" href="{{ url('public/assets/dist/css/adminlte.min.css') }}">
+  <link rel="stylesheet" href="{{ url('assets/dist/css/adminlte.min.css') }}">
   <link rel="stylesheet" href="https://maxcdn.bootstrapcdn.com/font-awesome/4.7.0/css/font-awesome.min.css">
   <style>
     .scrollable-card {
@@ -507,24 +507,24 @@
 <!-- ./wrapper -->
 
 <!-- jQuery -->
-<script src="{{ url('public/assets/plugins/jquery/jquery.min.js') }}"></script>
+<script src="{{ url('assets/plugins/jquery/jquery.min.js') }}"></script>
 <!-- Bootstrap 4 -->
-<script src="{{ url('public/assets/plugins/bootstrap/js/bootstrap.bundle.min.js') }}"></script>
+<script src="{{ url('assets/plugins/bootstrap/js/bootstrap.bundle.min.js') }}"></script>
 <!-- DataTables  & Plugins -->
-<script src="{{ url('public/assets/plugins/datatables/jquery.dataTables.min.js') }}"></script>
-<script src="{{ url('public/assets/plugins/datatables-bs4/js/dataTables.bootstrap4.min.js') }}"></script>
-<script src="{{ url('public/assets/plugins/datatables-responsive/js/dataTables.responsive.min.js') }}"></script>
-<script src="{{ url('public/assets/plugins/datatables-responsive/js/responsive.bootstrap4.min.js') }}"></script>
-<script src="{{ url('public/assets/plugins/datatables-buttons/js/dataTables.buttons.min.js') }}"></script>
-<script src="{{ url('public/assets/plugins/datatables-buttons/js/buttons.bootstrap4.min.js') }}"></script>
-<script src="{{ url('public/assets/plugins/jszip/jszip.min.js') }}"></script>
-<script src="{{ url('public/assets/plugins/pdfmake/pdfmake.min.js') }}"></script>
-<script src="{{ url('public/assets/plugins/pdfmake/vfs_fonts.js') }}"></script>
-<script src="{{ url('public/assets/plugins/datatables-buttons/js/buttons.html5.min.js') }}"></script>
-<script src="{{ url('public/assets/plugins/datatables-buttons/js/buttons.print.min.js') }}"></script>
-<script src="{{ url('public/assets/plugins/datatables-buttons/js/buttons.colVis.min.js') }}"></script>
+<script src="{{ url('assets/plugins/datatables/jquery.dataTables.min.js') }}"></script>
+<script src="{{ url('assets/plugins/datatables-bs4/js/dataTables.bootstrap4.min.js') }}"></script>
+<script src="{{ url('assets/plugins/datatables-responsive/js/dataTables.responsive.min.js') }}"></script>
+<script src="{{ url('assets/plugins/datatables-responsive/js/responsive.bootstrap4.min.js') }}"></script>
+<script src="{{ url('assets/plugins/datatables-buttons/js/dataTables.buttons.min.js') }}"></script>
+<script src="{{ url('assets/plugins/datatables-buttons/js/buttons.bootstrap4.min.js') }}"></script>
+<script src="{{ url('assets/plugins/jszip/jszip.min.js') }}"></script>
+<script src="{{ url('assets/plugins/pdfmake/pdfmake.min.js') }}"></script>
+<script src="{{ url('assets/plugins/pdfmake/vfs_fonts.js') }}"></script>
+<script src="{{ url('assets/plugins/datatables-buttons/js/buttons.html5.min.js') }}"></script>
+<script src="{{ url('assets/plugins/datatables-buttons/js/buttons.print.min.js') }}"></script>
+<script src="{{ url('assets/plugins/datatables-buttons/js/buttons.colVis.min.js') }}"></script>
 <!-- AdminLTE App -->
-<script src="{{ url('public/assets/dist/js/adminlte.min.js') }}"></script>
+<script src="{{ url('assets/dist/js/adminlte.min.js') }}"></script>
 <script>
   $(function () {
     $("#example1").DataTable({

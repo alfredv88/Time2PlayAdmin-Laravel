@@ -17,7 +17,7 @@ class FirebaseService
     public function __construct($project)
     {
         if ($project === 'time2play') {
-            $firebase = (new Factory)->withServiceAccount(base_path('storage/app/time2play.json'));
+            $firebase = (new Factory)->withServiceAccount(base_path('bandmates.json'));
         } else {
             throw new \Exception('Unsupported Firebase project.');
         }
@@ -28,31 +28,41 @@ class FirebaseService
 
     public function sendNotification($token, $title, $body, $customData = [])
     {
-        // Ensure the custom data is an associative array of key-value pairs
-        $message = CloudMessage::withTarget('token', $token)
-            ->withNotification([
-                'title' => $title,
-                'body' => $body
-            ])
-            // ->withData($customData)  // Content_available and other data passed here
-            ->withApnsConfig([
-                'headers' => [
-                    'apns-priority' => '10'
-                ],
-                'payload' => [
-                    'aps' => [
-                        'content-available' => 1  // Set content_available to true for iOS
+        try {
+            // Ensure the custom data is an associative array of key-value pairs
+            $message = CloudMessage::withTarget('token', $token)
+                ->withNotification([
+                    'title' => $title,
+                    'body' => $body
+                ])
+                ->withData($customData)
+                ->withApnsConfig([
+                    'headers' => [
+                        'apns-priority' => '10'
                     ],
-                    'customData' => [
-                        'customData' => $customData  // Set content_available to true for iOS
-                    ],
-                ]
-            ])
-            ->withAndroidConfig([
-                'priority' => 'high'
-            ]);
+                    'payload' => [
+                        'aps' => [
+                            'content-available' => 1
+                        ]
+                    ]
+                ])
+                ->withAndroidConfig([
+                    'priority' => 'high'
+                ]);
 
-        // Send the notification
-        $this->messaging->send($message);
+            // Send the notification
+            $this->messaging->send($message);
+            Log::info('Notification sent successfully', ['token' => $token, 'title' => $title]);
+            
+        } catch (NotFound $e) {
+            Log::error('Firebase token not found', ['token' => $token, 'error' => $e->getMessage()]);
+            throw new \Exception('Token de notificación no válido');
+        } catch (InvalidArgument $e) {
+            Log::error('Invalid Firebase argument', ['error' => $e->getMessage()]);
+            throw new \Exception('Argumentos de notificación inválidos');
+        } catch (\Exception $e) {
+            Log::error('Firebase notification error', ['error' => $e->getMessage()]);
+            throw new \Exception('Error al enviar notificación: ' . $e->getMessage());
+        }
     }
 }

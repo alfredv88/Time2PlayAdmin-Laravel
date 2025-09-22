@@ -33,12 +33,12 @@ Route::post('/session/store-otp', function (Request $r) {
         'admin_doc_id' => $r->docId,
     ]);
     return response()->json(['ok' => true]);
-})->name('session.store.otp');
+})->name('session.store.otp')->middleware('csrf');
 
 Route::post('/session/clear-reset', function () {
     session()->forget(['reset_email', 'otp', 'admin_doc_id']);
     return response()->json(['ok' => true]);
-})->name('session.clear.reset');
+})->name('session.clear.reset')->middleware('csrf');
 
 
 Route::middleware(['guard'])->group(function () {
@@ -106,7 +106,7 @@ Route::middleware(['guard'])->group(function () {
 
 
     // web.php
-    Route::get('/versions', [UsersController::class, 'versions'])->name('versions');
+    Route::get('/versions', [UsersController::class, 'versions'])->name('versions.index');
 
 
     Route::get('version/add', [UsersController::class, 'addVersion']);
@@ -120,66 +120,11 @@ Route::middleware(['guard'])->group(function () {
     // PDF upload to public/ and return absolute URL
     Route::post('/policies/pdf-upload', [UsersController::class, 'uploadPolicyPdf'])->name('policies.pdf.upload');
 
-    Route::get('/versions', [UsersController::class, 'versions']);
+    Route::get('/versions', [UsersController::class, 'versions'])->name('versions.list');
 
-    Route::get('help-requests', [UsersController::class, 'helpRequestsView']);
+    Route::get('help-requests', [UsersController::class, 'helpRequestsView'])->name('help.requests.index');
     Route::post('help-requests/reply/{id}', [UsersController::class, 'reply'])->name('help.requests.reply');
 });
 
 
 
-// Route::get('login', [AuthController::class, 'login']);
-// // Route::post('login', [AuthController::class, 'adminLogin']);
-// Route::post('/login', [AuthController::class, 'adminLogin'])->name('admin.login');
-// Route::get('forgotPassword', [AuthController::class, 'forgotPassword']);
-// Route::post('verifyEmail', [AuthController::class, 'verifyEmail']);
-// Route::get('resendOtp', [AuthController::class, 'resendOtp']);
-// Route::get('otp', [AuthController::class, 'otp']);
-// Route::post('verify', [AuthController::class, 'verify']);
-// Route::get('newPassword', [AuthController::class, 'newPassword']);
-// Route::post('newPassword', [AuthController::class, 'changePassword']);
-// Route::post('logout', [AuthController::class, 'logout']);
-
-// Route::middleware(['guard'])->group(function () {
-//     Route::resource('/', HomeController::class);
-//     // Route::get('/users', [UsersController::class, 'users']);
-//     Route::get('/users', [UsersController::class, 'index'])->name('users.index');
-
-//     // Toggle status (block/unblock). POST keeps it simple (no JS required).
-//     Route::post('/users/{id}/toggle', [UsersController::class, 'toggle'])->name('users.toggle');
-//     // Events Requests
-//     Route::get('/events', [UsersController::class, 'events']);
-//     Route::get('/view-event', [UsersController::class, 'viewEvent']);
-
-//     // center management
-//     Route::get('/center-request', [UsersController::class, 'centerRequest']);
-//     Route::get('/center-request-details', [UsersController::class, 'centerRequestDetails']);
-
-//     // sports-management details
-//     Route::get('/add-sport', [UsersController::class, 'addSport']);
-//     Route::get('/sports-management', [UsersController::class, 'sportsManagement']);
-
-//     // subscription control
-//     Route::get('/subscription-control', [UsersController::class, 'subscriptionControl']);
-
-//     Route::get('/toggle-user-status/{userId}/{newStatus}', [App\Http\Controllers\UsersController::class, 'toggleStatus']);
-//     Route::get('/users/active', [UsersController::class, 'activeUsers']);
-//     Route::post('update-password', [AuthController::class, 'updateAdminPassword'])->name('update.password');
-//     Route::get('/users/blocked', [UsersController::class, 'blockedUsers']);
-//     Route::post('/store-noti', [App\Http\Controllers\UsersController::class, 'store']);
-//     Route::get('/notifications', [UsersController::class, 'notifications']);
-//     Route::get('edit-doc/{id}', [AuthController::class, 'editPolicyDocument']);
-//     Route::post('update-doc/{id}', [AuthController::class, 'updatePolicyDocument']);
-//     Route::post('update-privacy-policy', [AuthController::class, 'updatePrivacyPolicy'])->name('update.privacy');
-//     Route::delete('/noti/delete/{id}', [App\Http\Controllers\UsersController::class, 'delete']);
-//     Route::get('/noti/add', [UsersController::class, 'addNoti']);
-//     Route::get('/version/add', [UsersController::class, 'addVersion']);
-//     Route::post('store-android-version', [UsersController::class, 'storeAndroidVersion']);
-//     Route::post('version/update-status', [UsersController::class, 'updateVersionStatus']);
-//     Route::get('/change-password', [UsersController::class, 'changePassword']);
-//     Route::get('/policies', [UsersController::class, 'policyDoc']);
-//     Route::get('/add-doc', [UsersController::class, 'addDoc']);
-//     Route::get('/versions', [UsersController::class, 'versions']);
-//     Route::get('help-requests', [UsersController::class, 'helpRequestsView']);
-//     Route::post('help-requests/reply/{id}', [UsersController::class, 'reply'])->name('help.requests.reply');
-// });
