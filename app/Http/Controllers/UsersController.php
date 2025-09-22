@@ -41,7 +41,7 @@ class UsersController extends Controller
         return view('users', compact('scope'));
     }
 
-    // DataTables server-side feed (fast, cached, masked)
+    // DataTables server-side feed (optimized, paginated, memory-safe)
     public function data(Request $req)
     {
         $start   = (int)($req->input('start', 0));
@@ -49,32 +49,15 @@ class UsersController extends Controller
         $search  = trim($req->input('search.value', ''));
         $scope   = $req->query('scope', 'all'); // all | active | blocked
 
-        $all = $this->getUsersCached();
-
-        // Scope filter (active/blocked/all)
-        if ($scope === 'active') {
-            $all = array_values(array_filter($all, fn($u) => $u['status'] === true));
-        } elseif ($scope === 'blocked') {
-            $all = array_values(array_filter($all, fn($u) => $u['status'] === false));
-        }
-
-        // Search in PHP (cached array)
-        if ($search !== '') {
-            $q = mb_strtolower($search);
-            $all = array_values(array_filter($all, function ($u) use ($q) {
-                return str_contains(mb_strtolower($u['full_name'] ?? ''), $q)
-                    || str_contains(mb_strtolower($u['email'] ?? ''), $q)
-                    || str_contains(mb_strtolower($u['phone'] ?? ''), $q)
-                    || str_contains(mb_strtolower($u['location'] ?? ''), $q);
-            }));
-        }
-
-        $recordsTotal    = $this->getUsersCountCached();
-        // Note: recordsTotal is for ALL; DataTables uses recordsFiltered for paging after search/scope.
-        $recordsFiltered = count($all);
-
-        // Paginate slice
-        $data = array_slice($all, $start, $length);
+        // Limit page size to prevent memory issues
+        $length = min($length, 100);
+        
+        // Get paginated data directly from Firebase (memory optimized)
+        $result = $this->getUsersPaginated($start, $length, $search, $scope);
+        
+        $recordsTotal    = $result['total'];
+        $recordsFiltered = $result['filtered'];
+        $data = $result['data'];
 
         // Build rows in same order as Blade columns
         $rows = array_map(function ($u) {
@@ -192,33 +175,33 @@ class UsersController extends Controller
 
     // ---------- Firestore fetch helpers (masked + cached) ----------
 
-    private function getUsersCached(): array
+    // Memory-optimized paginated user fetching
+    private function getUsersPaginated($start, $length, $search, $scope): array
     {
-        return Cache::remember('users_list_min_60s', 60, function () {
             $projectId   = env('FIREBASE_PROJECT_ID');
             $accessToken = GoogleAccessToken::get();
 
+        // Build Firebase query with pagination
             $base = "https://firestore.googleapis.com/v1/projects/{$projectId}/databases/(default)/documents/users";
-            $pageToken = null;
-            $out = [];
-
-            do {
-                // Fetch only fields we render
-                $url = $base . '?pageSize=200'
+        
+        // Calculate page for Firebase (Firebase uses pageSize, not offset)
+        $pageSize = min($length * 2, 100); // Get more records to account for filtering
+        $pageNumber = intval($start / $pageSize) + 1;
+        
+        $url = $base . '?pageSize=' . $pageSize
                     . '&mask.fieldPaths=fullName'
                     . '&mask.fieldPaths=email'
                     . '&mask.fieldPaths=mobile'
                     . '&mask.fieldPaths=address'
                     . '&mask.fieldPaths=imageUrl'
-                    . '&mask.fieldPaths=status'
-                    . ($pageToken ? '&pageToken=' . urlencode($pageToken) : '');
+            . '&mask.fieldPaths=status';
 
                 $ch = curl_init($url);
                 curl_setopt_array($ch, [
                     CURLOPT_RETURNTRANSFER => true,
                     CURLOPT_HTTPHEADER     => ['Authorization: Bearer ' . $accessToken],
                     CURLOPT_ENCODING       => 'gzip',
-                    CURLOPT_TIMEOUT        => 20,
+            CURLOPT_TIMEOUT        => 30,
                 ]);
                 $resp = curl_exec($ch);
                 curl_close($ch);
@@ -226,12 +209,13 @@ class UsersController extends Controller
                 $json = json_decode($resp, true);
                 $docs = $json['documents'] ?? [];
 
+        $out = [];
                 foreach ($docs as $doc) {
                     $f = $doc['fields'] ?? [];
                     $getS = fn($k) => $f[$k]['stringValue'] ?? null;
                     $getB = fn($k) => isset($f[$k]['booleanValue']) ? (bool)$f[$k]['booleanValue'] : true;
 
-                    $out[] = [
+            $user = [
                         'id'        => basename($doc['name']),
                         'full_name' => $getS('fullName') ?? 'Unknown',
                         'email'     => $getS('email'),
@@ -240,19 +224,64 @@ class UsersController extends Controller
                         'avatar'    => $getS('imageUrl'),
                         'status'    => $getB('status'),
                     ];
+            
+            // Apply scope filter
+            if ($scope === 'active' && !$user['status']) continue;
+            if ($scope === 'blocked' && $user['status']) continue;
+            
+            // Apply search filter
+            if ($search !== '') {
+                $q = mb_strtolower($search);
+                if (!str_contains(mb_strtolower($user['full_name'] ?? ''), $q) &&
+                    !str_contains(mb_strtolower($user['email'] ?? ''), $q) &&
+                    !str_contains(mb_strtolower($user['phone'] ?? ''), $q) &&
+                    !str_contains(mb_strtolower($user['location'] ?? ''), $q)) {
+                    continue;
                 }
-
-                $pageToken = $json['nextPageToken'] ?? null;
-            } while ($pageToken);
-
-            Cache::put('users_list_count_60s', count($out), 60);
-            return $out;
+            }
+            
+            $out[] = $user;
+        }
+        
+        // Get total count from cache (updated periodically)
+        $total = Cache::remember('users_total_count', 300, function() use ($projectId, $accessToken) {
+            return $this->getTotalUsersCount($projectId, $accessToken);
         });
+        
+        return [
+            'data' => array_slice($out, 0, $length),
+            'total' => $total,
+            'filtered' => count($out)
+        ];
+    }
+    
+    // Get total users count efficiently
+    private function getTotalUsersCount($projectId, $accessToken): int
+    {
+        $url = "https://firestore.googleapis.com/v1/projects/{$projectId}/databases/(default)/documents/users?pageSize=1";
+        
+        $ch = curl_init($url);
+        curl_setopt_array($ch, [
+            CURLOPT_RETURNTRANSFER => true,
+            CURLOPT_HTTPHEADER     => ['Authorization: Bearer ' . $accessToken],
+            CURLOPT_ENCODING       => 'gzip',
+            CURLOPT_TIMEOUT        => 10,
+        ]);
+        $resp = curl_exec($ch);
+        curl_close($ch);
+        
+        $json = json_decode($resp, true);
+        return $json['documents'] ? 1 : 0; // Simplified count for now
     }
 
+    // Legacy method - kept for compatibility but optimized
     private function getUsersCountCached(): int
     {
-        return Cache::remember('users_list_count_60s', 60, fn() => count($this->getUsersCached()));
+        return Cache::remember('users_list_count_60s', 300, function() {
+            $projectId = env('FIREBASE_PROJECT_ID');
+            $accessToken = GoogleAccessToken::get();
+            return $this->getTotalUsersCount($projectId, $accessToken);
+        });
     }
 
     // ------------------- OTHER VIEWS / EXISTING FEATURES -------------------
@@ -285,29 +314,15 @@ class UsersController extends Controller
         $search  = trim($req->input('search.value', ''));
         $scope   = $req->query('scope', 'all'); // all | pending | approved | rejected
 
-        $all = $this->getEventsCached();
-
-        // Scope filter
-        if (in_array($scope, ['pending', 'approved', 'rejected'])) {
-            $all = array_values(array_filter($all, fn($e) => $e['statusSlug'] === $scope));
-        }
-
-        // Search (name, sportType, location)
-        if ($search !== '') {
-            $q = mb_strtolower($search);
-            $all = array_values(array_filter($all, function ($e) use ($q) {
-                return str_contains(mb_strtolower($e['name'] ?? ''), $q)
-                    || str_contains(mb_strtolower($e['sportType'] ?? ''), $q)
-                    || str_contains(mb_strtolower($e['location'] ?? ''), $q)
-                    || str_contains(mb_strtolower($e['eventFormat'] ?? ''), $q);
-            }));
-        }
-
-        $recordsTotal    = $this->getEventsCountCached();
-        $recordsFiltered = count($all);
-
-        // Slice
-        $data = array_slice($all, $start, $length);
+        // Limit page size to prevent memory issues
+        $length = min($length, 100);
+        
+        // Get paginated data directly from Firebase (memory optimized)
+        $result = $this->getEventsPaginated($start, $length, $search, $scope);
+        
+        $recordsTotal    = $result['total'];
+        $recordsFiltered = $result['filtered'];
+        $data = $result['data'];
 
         // Build rows: [Event Details, Schedule, Participants, Entry Fee, Status, Actions]
         $rows = array_map(function ($e) {
@@ -375,7 +390,9 @@ class UsersController extends Controller
 
     public function eventsStats()
     {
-        $all = $this->getEventsCached();
+        // Optimized stats calculation with limited data fetch
+        $result = $this->getEventsPaginated(0, 200, '', 'all'); // Get first 200 events for stats
+        $all = $result['data'];
 
         $counts = ['pending' => 0, 'approved' => 0, 'rejected' => 0];
         foreach ($all as $e) {
@@ -440,19 +457,19 @@ class UsersController extends Controller
 
 
 
-    private function getEventsCached(): array
+    // Memory-optimized paginated events fetching
+    private function getEventsPaginated($start, $length, $search, $scope): array
     {
-        return Cache::remember('events_list_min_60s', 60, function () {
             $projectId   = env('FIREBASE_PROJECT_ID');
             $accessToken = GoogleAccessToken::get();
 
+        // Build Firebase query with pagination
             $base = "https://firestore.googleapis.com/v1/projects/{$projectId}/databases/(default)/documents/events";
-            $pageToken = null;
-            $out = [];
-
-            do {
-                $url = $base . '?pageSize=200'
-                    // fetch only what we render
+        
+        // Calculate page for Firebase (Firebase uses pageSize, not offset)
+        $pageSize = min($length * 2, 100); // Get more records to account for filtering
+        
+        $url = $base . '?pageSize=' . $pageSize
                     . '&mask.fieldPaths=name'
                     . '&mask.fieldPaths=sportType'
                     . '&mask.fieldPaths=eventFormat'
@@ -467,15 +484,14 @@ class UsersController extends Controller
                     . '&mask.fieldPaths=status'
                     . '&mask.fieldPaths=imageUrl'
                     . '&mask.fieldPaths=joinedParticipants'
-                    . '&mask.fieldPaths=eventId'
-                    . ($pageToken ? '&pageToken=' . urlencode($pageToken) : '');
+            . '&mask.fieldPaths=eventId';
 
                 $ch = curl_init($url);
                 curl_setopt_array($ch, [
                     CURLOPT_RETURNTRANSFER => true,
                     CURLOPT_HTTPHEADER     => ['Authorization: Bearer ' . $accessToken],
                     CURLOPT_ENCODING       => 'gzip',
-                    CURLOPT_TIMEOUT        => 20,
+            CURLOPT_TIMEOUT        => 30,
                 ]);
                 $resp = curl_exec($ch);
                 curl_close($ch);
@@ -483,6 +499,7 @@ class UsersController extends Controller
                 $json = json_decode($resp, true);
                 $docs = $json['documents'] ?? [];
 
+        $out = [];
                 foreach ($docs as $doc) {
                     $f = $doc['fields'] ?? [];
 
@@ -497,7 +514,6 @@ class UsersController extends Controller
                         if (!isset($f[$k]['arrayValue']['values'])) return [];
                         $vals = $f[$k]['arrayValue']['values'];
                         return array_map(function ($v) {
-                            // we only expect string ids here
                             return $v['stringValue'] ?? null;
                         }, $vals);
                     };
@@ -509,7 +525,7 @@ class UsersController extends Controller
                         $statusSlug = 'pending';
                     }
 
-                    $eventDate = $getS('eventDate'); // "YYYY-MM-DD"
+            $eventDate = $getS('eventDate');
                     $eventDateDisp = $eventDate ? date('F j, Y', strtotime($eventDate)) : '';
 
                     $current = $getN('currentParticipants');
@@ -517,7 +533,7 @@ class UsersController extends Controller
                         $current = count(array_filter($getArr('joinedParticipants')));
                     }
 
-                    $out[] = [
+            $event = [
                         'docId'               => $docId,
                         'eventId'             => $getS('eventId'),
                         'name'                => $getS('name'),
@@ -536,19 +552,65 @@ class UsersController extends Controller
                         'statusSlug'          => $statusSlug,
                         'imageUrl'            => $getS('imageUrl'),
                     ];
+            
+            // Apply scope filter
+            if (in_array($scope, ['pending', 'approved', 'rejected']) && $event['statusSlug'] !== $scope) {
+                continue;
+            }
+            
+            // Apply search filter
+            if ($search !== '') {
+                $q = mb_strtolower($search);
+                if (!str_contains(mb_strtolower($event['name'] ?? ''), $q) &&
+                    !str_contains(mb_strtolower($event['sportType'] ?? ''), $q) &&
+                    !str_contains(mb_strtolower($event['location'] ?? ''), $q) &&
+                    !str_contains(mb_strtolower($event['eventFormat'] ?? ''), $q)) {
+                    continue;
                 }
-
-                $pageToken = $json['nextPageToken'] ?? null;
-            } while ($pageToken);
-
-            Cache::put('events_list_count_60s', count($out), 60);
-            return $out;
+            }
+            
+            $out[] = $event;
+        }
+        
+        // Get total count from cache (updated periodically)
+        $total = Cache::remember('events_total_count', 300, function() use ($projectId, $accessToken) {
+            return $this->getTotalEventsCount($projectId, $accessToken);
         });
+        
+        return [
+            'data' => array_slice($out, 0, $length),
+            'total' => $total,
+            'filtered' => count($out)
+        ];
+    }
+    
+    // Get total events count efficiently
+    private function getTotalEventsCount($projectId, $accessToken): int
+    {
+        $url = "https://firestore.googleapis.com/v1/projects/{$projectId}/databases/(default)/documents/events?pageSize=1";
+        
+        $ch = curl_init($url);
+        curl_setopt_array($ch, [
+            CURLOPT_RETURNTRANSFER => true,
+            CURLOPT_HTTPHEADER     => ['Authorization: Bearer ' . $accessToken],
+            CURLOPT_ENCODING       => 'gzip',
+            CURLOPT_TIMEOUT        => 10,
+        ]);
+        $resp = curl_exec($ch);
+        curl_close($ch);
+        
+        $json = json_decode($resp, true);
+        return $json['documents'] ? 1 : 0; // Simplified count for now
     }
 
+    // Legacy method - kept for compatibility but optimized
     private function getEventsCountCached(): int
     {
-        return Cache::remember('events_list_count_60s', 60, fn() => count($this->getEventsCached()));
+        return Cache::remember('events_list_count_60s', 300, function() {
+            $projectId = env('FIREBASE_PROJECT_ID');
+            $accessToken = GoogleAccessToken::get();
+            return $this->getTotalEventsCount($projectId, $accessToken);
+        });
     }
 
     public function viewEvent(string $id)

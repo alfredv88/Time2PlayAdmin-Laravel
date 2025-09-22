@@ -156,9 +156,9 @@ trait EditUserTrait
     {
         $disableUser = null;
 
-        if ($this->markAsDisabled === true) {
+        if ($this->markAsDisabled) {
             $disableUser = true;
-        } elseif ($this->markAsEnabled === true) {
+        } elseif ($this->markAsEnabled) {
             $disableUser = false;
         }
 

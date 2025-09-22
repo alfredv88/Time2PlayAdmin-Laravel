@@ -2,32 +2,23 @@
   "version": 2,
   "builds": [
     {
-      "src": "api/index.php",
+      "src": "public/index.php",
       "use": "@vercel/php"
     }
   ],
   "routes": [
     {
       "src": "/(.*)",
-      "dest": "/api/index.php"
+      "dest": "public/index.php"
     }
   ],
   "env": {
     "APP_ENV": "production",
-    "APP_DEBUG": "false",
-    "APP_KEY": "base64:XpTaMTFrSmeqYsCdxrJhiEBZXqkVu7r6mg1S72gqJ9A=",
-    "APP_URL": "https://time2-play-admin.vercel.app",
-    "APP_CONFIG_CACHE": "/tmp/config.php",
-    "APP_EVENTS_CACHE": "/tmp/events.php",
-    "APP_PACKAGES_CACHE": "/tmp/packages.php",
-    "APP_ROUTES_CACHE": "/tmp/routes.php",
-    "APP_SERVICES_CACHE": "/tmp/services.php",
-    "VIEW_COMPILED_PATH": "/tmp",
-    "CACHE_DRIVER": "array",
-    "LOG_CHANNEL": "stderr",
-    "SESSION_DRIVER": "cookie",
-    "DB_CONNECTION": "sqlite",
-    "DB_DATABASE": ":memory:",
-    "FIREBASE_CREDENTIALS_PATH": "bandmates.json"
+    "APP_DEBUG": "false"
+  },
+  "functions": {
+    "public/index.php": {
+      "runtime": "php8.2"
+    }
   }
 }

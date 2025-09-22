@@ -67,13 +67,6 @@ class AuthController extends Controller
             'privacy_pdf' => 'required|file|mimes:pdf|max:5120', // 5MB max
         ]);
 
-        // Validación adicional de MIME type
-        $file = $request->file('privacy_pdf');
-        $mimeType = $file->getMimeType();
-        if ($mimeType !== 'application/pdf') {
-            return redirect()->back()->withErrors(['privacy_pdf' => 'El archivo debe ser un PDF válido.']);
-        }
-
         $file = $request->file('privacy_pdf');
         $filename = 'privacy-policy-' . time() . '.' . $file->getClientOriginalExtension();
 

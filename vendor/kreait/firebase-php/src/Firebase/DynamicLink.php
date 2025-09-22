@@ -93,7 +93,7 @@ final class DynamicLink implements JsonSerializable, Stringable
 
     public function hasWarnings(): bool
     {
-        return $this->warnings() !== [];
+        return !empty($this->warnings());
     }
 
     public function jsonSerialize(): array

@@ -5,6 +5,9 @@ use Illuminate\Http\Request;
 
 define('LARAVEL_START', microtime(true));
 
+// Load memory optimization settings
+require_once __DIR__.'/../bootstrap/memory_optimization.php';
+
 /*
 |--------------------------------------------------------------------------
 | Check If The Application Is Under Maintenance

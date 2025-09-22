@@ -7,6 +7,7 @@ namespace Kreait\Firebase;
 use Beste\Cache\InMemoryCache;
 use Beste\Clock\SystemClock;
 use Beste\Clock\WrappingClock;
+use Beste\Json;
 use Firebase\JWT\CachedKeySet;
 use Google\Auth\ApplicationDefaultCredentials;
 use Google\Auth\Credentials\ServiceAccountCredentials;
@@ -28,23 +29,15 @@ use Kreait\Firebase\Auth\ApiClient;
 use Kreait\Firebase\Auth\CustomTokenViaGoogleCredentials;
 use Kreait\Firebase\Auth\SignIn\GuzzleHandler;
 use Kreait\Firebase\Database\UrlBuilder;
-use Kreait\Firebase\Exception\AppCheckApiExceptionConverter;
-use Kreait\Firebase\Exception\AuthApiExceptionConverter;
-use Kreait\Firebase\Exception\DatabaseApiExceptionConverter;
 use Kreait\Firebase\Exception\InvalidArgumentException;
 use Kreait\Firebase\Exception\MessagingApiExceptionConverter;
-use Kreait\Firebase\Exception\RemoteConfigApiExceptionConverter;
 use Kreait\Firebase\Exception\RuntimeException;
-use Kreait\Firebase\Http\ErrorResponseParser;
 use Kreait\Firebase\Http\HttpClientOptions;
 use Kreait\Firebase\Http\Middleware;
 use Kreait\Firebase\JWT\IdTokenVerifier;
 use Kreait\Firebase\JWT\SessionCookieVerifier;
 use Kreait\Firebase\Messaging\AppInstanceApiClient;
 use Kreait\Firebase\Messaging\RequestFactory;
-use Kreait\Firebase\Valinor\Mapper;
-use Kreait\Firebase\Valinor\Normalizer;
-use Kreait\Firebase\Valinor\Source;
 use Psr\Cache\CacheItemPoolInterface;
 use Psr\Clock\ClockInterface;
 use Psr\Http\Message\UriInterface;
@@ -52,12 +45,21 @@ use Psr\Log\LoggerInterface;
 use Psr\Log\LogLevel;
 use Stringable;
 use Throwable;
+use UnexpectedValueException;
 
 use function array_filter;
 use function is_string;
 use function sprintf;
 use function trim;
 
+/**
+ * @phpstan-type ServiceAccountShape array{
+ *     project_id: non-empty-string,
+ *     client_email: non-empty-string,
+ *     private_key: non-empty-string,
+ *     type: 'service_account'
+ * }
+ */
 final class Factory
 {
     public const API_CLIENT_SCOPES = [
@@ -81,7 +83,10 @@ final class Factory
      */
     private ?string $defaultStorageBucket = null;
 
-    private ?ServiceAccount $serviceAccount = null;
+    /**
+     * @var ServiceAccountShape|null
+     */
+    private ?array $serviceAccount = null;
 
     private ?FetchAuthTokenInterface $googleAuthTokenCredentials = null;
 
@@ -90,13 +95,11 @@ final class Factory
      */
     private ?string $projectId = null;
 
-    private CacheItemPoolInterface $defaultCache;
+    private CacheItemPoolInterface $verifierCache;
 
-    private ?CacheItemPoolInterface $verifierCache = null;
+    private CacheItemPoolInterface $authTokenCache;
 
-    private ?CacheItemPoolInterface $authTokenCache = null;
-
-    private ?CacheItemPoolInterface $keySetCache = null;
+    private CacheItemPoolInterface $keySetCache;
 
     private ClockInterface $clock;
 
@@ -124,42 +127,56 @@ final class Factory
 
     private HttpClientOptions $httpClientOptions;
 
-    private ErrorResponseParser $errorResponseParser;
-
     /**
      * @var array<non-empty-string, mixed>
      */
     private array $firestoreClientConfig = [];
 
-    private mixed $mapperCache = null;
-
-    private mixed $normalizerCache = null;
-
-    private ?Mapper $mapper = null;
-
-    private ?Normalizer $normalizer = null;
-
     public function __construct()
     {
         $this->clock = SystemClock::create();
-
-        $this->defaultCache = new InMemoryCache($this->clock);
         $this->httpFactory = new HttpFactory();
+        $this->verifierCache = new InMemoryCache($this->clock);
+        $this->authTokenCache = new InMemoryCache($this->clock);
+        $this->keySetCache = new InMemoryCache($this->clock);
         $this->httpClientOptions = HttpClientOptions::default();
-        $this->errorResponseParser = new ErrorResponseParser();
     }
 
     /**
-     * @param string|array<mixed> $value
-     *
-     * @throws InvalidArgumentException
+     * @param non-empty-string|ServiceAccountShape $value
      */
     public function withServiceAccount(string|array $value): self
     {
-        $serviceAccount = $this->mapServiceAccount($value);
+        if (is_string($value) && str_starts_with($value, '{')) {
+            try {
+                /** @var ServiceAccountShape $serviceAccount */
+                $serviceAccount = Json::decode($value, true);
+            } catch (UnexpectedValueException $e) {
+                throw new InvalidArgumentException('Invalid service account: '.$e->getMessage(), $e->getCode(), $e);
+            }
+
+            $factory = clone $this;
+            $factory->serviceAccount = $serviceAccount;
+
+            return $factory;
+        }
+
+        if (is_string($value)) {
+            try {
+                /** @var ServiceAccountShape $serviceAccount */
+                $serviceAccount = Json::decodeFile($value, true);
+
+                $factory = clone $this;
+                $factory->serviceAccount = $serviceAccount;
+
+                return $factory;
+            } catch (UnexpectedValueException $e) {
+                throw new InvalidArgumentException('Invalid service account: '.$e->getMessage(), $e->getCode(), $e);
+            }
+        }
 
         $factory = clone $this;
-        $factory->serviceAccount = $serviceAccount;
+        $factory->serviceAccount = $value;
 
         return $factory;
     }
@@ -255,17 +272,6 @@ final class Factory
         return $factory;
     }
 
-    /**
-     * A cache instance to use when more specific caches are not set.
-     */
-    public function withDefaultCache(CacheItemPoolInterface $cache): self
-    {
-        $factory = clone $this;
-        $factory->defaultCache = $cache;
-
-        return $factory;
-    }
-
     public function withVerifierCache(CacheItemPoolInterface $cache): self
     {
         $factory = clone $this;
@@ -290,24 +296,6 @@ final class Factory
         return $factory;
     }
 
-    public function withMapperCache(mixed $cache): self
-    {
-        $factory = clone $this;
-        $factory->mapperCache = $cache;
-        $factory->mapper = null;
-
-        return $factory;
-    }
-
-    public function withNormalizerCache(mixed $cache): self
-    {
-        $factory = clone $this;
-        $factory->normalizerCache = $cache;
-        $factory->normalizer = null;
-
-        return $factory;
-    }
-
     public function withHttpClientOptions(HttpClientOptions $options): self
     {
         $factory = clone $this;
@@ -322,9 +310,9 @@ final class Factory
      */
     public function withHttpLogger(LoggerInterface $logger, ?MessageFormatter $formatter = null, ?string $logLevel = null, ?string $errorLogLevel = null): self
     {
-        $formatter ??= new MessageFormatter();
-        $logLevel ??= LogLevel::INFO;
-        $errorLogLevel ??= LogLevel::NOTICE;
+        $formatter = $formatter ?: new MessageFormatter();
+        $logLevel = $logLevel ?: LogLevel::INFO;
+        $errorLogLevel = $errorLogLevel ?: LogLevel::NOTICE;
 
         $factory = clone $this;
         $factory->httpLogMiddleware = Middleware::log($logger, $formatter, $logLevel, $errorLogLevel);
@@ -338,9 +326,9 @@ final class Factory
      */
     public function withHttpDebugLogger(LoggerInterface $logger, ?MessageFormatter $formatter = null, ?string $logLevel = null, ?string $errorLogLevel = null): self
     {
-        $formatter ??= new MessageFormatter(MessageFormatter::DEBUG);
-        $logLevel ??= LogLevel::INFO;
-        $errorLogLevel ??= LogLevel::NOTICE;
+        $formatter = $formatter ?: new MessageFormatter(MessageFormatter::DEBUG);
+        $logLevel = $logLevel ?: LogLevel::INFO;
+        $errorLogLevel = $errorLogLevel ?: LogLevel::NOTICE;
 
         $factory = clone $this;
         $factory->httpDebugLogMiddleware = Middleware::log($logger, $formatter, $logLevel, $errorLogLevel);
@@ -377,16 +365,16 @@ final class Factory
             'https://firebaseappcheck.googleapis.com/v1/jwks',
             new Client($this->httpClientOptions->guzzleConfig()),
             $this->httpFactory,
-            $this->keySetCache ?? $this->defaultCache,
+            $this->keySetCache,
             21600,
             true,
         );
 
         return new AppCheck(
-            new AppCheck\ApiClient($http, new AppCheckApiExceptionConverter($this->errorResponseParser)),
+            new AppCheck\ApiClient($http),
             new AppCheckTokenGenerator(
-                $serviceAccount->clientEmail,
-                $serviceAccount->privateKey,
+                $serviceAccount['client_email'],
+                $serviceAccount['private_key'],
                 $this->clock,
             ),
             new AppCheckTokenVerifier($projectId, $keySet),
@@ -400,14 +388,7 @@ final class Factory
         $httpClient = $this->createApiClient();
 
         $signInHandler = new GuzzleHandler($projectId, $httpClient);
-        $authApiClient = new ApiClient(
-            $projectId,
-            $this->tenantId,
-            $httpClient,
-            $signInHandler,
-            $this->clock,
-            new AuthApiExceptionConverter($this->errorResponseParser),
-        );
+        $authApiClient = new ApiClient($projectId, $this->tenantId, $httpClient, $signInHandler, $this->clock);
         $customTokenGenerator = $this->createCustomTokenGenerator();
         $idTokenVerifier = $this->createIdTokenVerifier();
         $sessionCookieVerifier = $this->createSessionCookieVerifier();
@@ -428,11 +409,7 @@ final class Factory
 
         return new Database(
             GuzzleUtils::uriFor($databaseUrl),
-            new Database\ApiClient(
-                $http,
-                $resourceUrlBuilder,
-                new DatabaseApiExceptionConverter($this->errorResponseParser),
-            ),
+            new Database\ApiClient($http, $resourceUrlBuilder),
         );
     }
 
@@ -442,13 +419,7 @@ final class Factory
             'base_uri' => "https://firebaseremoteconfig.googleapis.com/v1/projects/{$this->getProjectId()}/remoteConfig",
         ]);
 
-        return new RemoteConfig(
-            new RemoteConfig\ApiClient(
-                $this->getProjectId(),
-                $http,
-                new RemoteConfigApiExceptionConverter($this->errorResponseParser),
-            ),
-        );
+        return new RemoteConfig(new RemoteConfig\ApiClient($this->getProjectId(), $http));
     }
 
     public function createMessaging(): Contract\Messaging
@@ -533,10 +504,16 @@ final class Factory
     }
 
     /**
-     * @deprecated 7.20.0
-     * @codeCoverageIgnore
-     *
-     * @return array<mixed>
+     * @return array{
+     *     credentialsType: string|null,
+     *     databaseUrl: string,
+     *     defaultStorageBucket: string|null,
+     *     serviceAccount: string|array<string, string>|null,
+     *     projectId: string,
+     *     tenantId: non-empty-string|null,
+     *     tokenCacheType: class-string,
+     *     verifierCacheType: class-string,
+     * }
      */
     public function getDebugInfo(): array
     {
@@ -569,8 +546,8 @@ final class Factory
             'projectId' => $projectId,
             'serviceAccount' => $this->getServiceAccount(),
             'tenantId' => $this->tenantId,
-            'tokenCacheType' => $this->authTokenCache !== null ? $this->authTokenCache::class : $this->defaultCache::class,
-            'verifierCacheType' => $this->verifierCache !== null ? $this->verifierCache::class : $this->defaultCache::class,
+            'tokenCacheType' => $this->authTokenCache::class,
+            'verifierCacheType' => $this->verifierCache::class,
         ];
     }
 
@@ -587,11 +564,11 @@ final class Factory
 
         $handler = HandlerStack::create($config['handler'] ?? null);
 
-        if ($this->httpLogMiddleware !== null) {
+        if ($this->httpLogMiddleware) {
             $handler->push($this->httpLogMiddleware, 'http_logs');
         }
 
-        if ($this->httpDebugLogMiddleware !== null) {
+        if ($this->httpDebugLogMiddleware) {
             $handler->push($this->httpDebugLogMiddleware, 'http_debug_logs');
         }
 
@@ -612,7 +589,7 @@ final class Factory
         $projectId = $this->getProjectId();
         $cachePrefix = 'kreait_firebase_'.$projectId;
 
-        $credentials = new FetchAuthTokenCache($credentials, ['prefix' => $cachePrefix], $this->authTokenCache ?? $this->defaultCache);
+        $credentials = new FetchAuthTokenCache($credentials, ['prefix' => $cachePrefix], $this->authTokenCache);
         $authTokenHandler = HttpHandlerFactory::build(new Client($config));
 
         $handler->push(new AuthTokenMiddleware($credentials, $authTokenHandler));
@@ -624,23 +601,29 @@ final class Factory
     }
 
     /**
-     * @return array<non-empty-string, mixed>
+     * @return array{
+     *     projectId: non-empty-string,
+     *     authCache: CacheItemPoolInterface,
+     *     credentialsFetcher?: FetchAuthTokenInterface,
+     *     keyFile?: ServiceAccountShape,
+     *     keyFilePath?: non-empty-string
+     * }
      */
     private function googleCloudClientConfig(): array
     {
         $config = [
             'projectId' => $this->getProjectId(),
-            'authCache' => $this->authTokenCache ?? $this->defaultCache,
+            'authCache' => $this->authTokenCache,
         ];
 
-        $credentials = $this->getGoogleAuthTokenCredentials();
-        if ($credentials !== null) {
+        if ($credentials = $this->getGoogleAuthTokenCredentials()) {
             $config['credentialsFetcher'] = $credentials;
         }
 
         $serviceAccount = $this->getServiceAccount();
+
         if ($serviceAccount !== null) {
-            $config['keyFile'] = $this->normalizeServiceAccount($serviceAccount);
+            $config['keyFile'] = $serviceAccount;
         }
 
         return $config;
@@ -655,14 +638,15 @@ final class Factory
             return $this->projectId;
         }
 
-        $credentials = $this->getGoogleAuthTokenCredentials();
-        $projectId = $credentials instanceof ProjectIdProviderInterface
-            ? $credentials->getProjectId()
-            : Util::getenv('GOOGLE_CLOUD_PROJECT');
+        if (
+            ($credentials = $this->getGoogleAuthTokenCredentials())
+            && ($credentials instanceof ProjectIdProviderInterface)
+            && ($projectId = $credentials->getProjectId())
+        ) {
+            return $this->projectId = $projectId;
+        }
 
-        $projectId ??= $this->getServiceAccount()?->projectId;
-
-        if (is_string($projectId) && $projectId !== '') {
+        if ($projectId = Util::getenv('GOOGLE_CLOUD_PROJECT')) {
             return $this->projectId = $projectId;
         }
 
@@ -674,7 +658,11 @@ final class Factory
      */
     private function getDatabaseUrl(): string
     {
-        return $this->databaseUrl ??= sprintf('https://%s.firebaseio.com', $this->getProjectId());
+        if ($this->databaseUrl === null) {
+            $this->databaseUrl = sprintf('https://%s.firebaseio.com', $this->getProjectId());
+        }
+
+        return $this->databaseUrl;
     }
 
     /**
@@ -682,7 +670,11 @@ final class Factory
      */
     private function getStorageBucketName(): string
     {
-        return $this->defaultStorageBucket ??= sprintf('%s.appspot.com', $this->getProjectId());
+        if ($this->defaultStorageBucket === null) {
+            $this->defaultStorageBucket = sprintf('%s.appspot.com', $this->getProjectId());
+        }
+
+        return $this->defaultStorageBucket;
     }
 
     private function createCustomTokenGenerator(): ?CustomTokenViaGoogleCredentials
@@ -698,7 +690,7 @@ final class Factory
 
     private function createIdTokenVerifier(): IdTokenVerifier
     {
-        $verifier = IdTokenVerifier::createWithProjectIdAndCache($this->getProjectId(), $this->verifierCache ?? $this->defaultCache);
+        $verifier = IdTokenVerifier::createWithProjectIdAndCache($this->getProjectId(), $this->verifierCache);
 
         if ($this->tenantId === null) {
             return $verifier;
@@ -707,49 +699,46 @@ final class Factory
         return $verifier->withExpectedTenantId($this->tenantId);
     }
 
-    private function getMapper(): Mapper
-    {
-        return $this->mapper ??= new Mapper($this->mapperCache);
-    }
-
-    private function getNormalizer(): Normalizer
-    {
-        return $this->normalizer ??= new Normalizer($this->normalizerCache);
-    }
-
     private function createSessionCookieVerifier(): SessionCookieVerifier
     {
-        return SessionCookieVerifier::createWithProjectIdAndCache($this->getProjectId(), $this->verifierCache ?? $this->defaultCache);
+        return SessionCookieVerifier::createWithProjectIdAndCache($this->getProjectId(), $this->verifierCache);
     }
 
-    private function getServiceAccount(): ?ServiceAccount
+    /**
+     * @return ServiceAccountShape|null
+     */
+    private function getServiceAccount(): ?array
     {
-        if ($this->serviceAccount !== null) {
-            return $this->serviceAccount;
+        if ($this->serviceAccount === null) {
+            $googleApplicationCredentials = Util::getenv('GOOGLE_APPLICATION_CREDENTIALS');
+
+            if ($googleApplicationCredentials === null) {
+                return null;
+            }
+
+            if (!str_starts_with($googleApplicationCredentials, '{')) {
+                return null;
+            }
+
+            /** @var ServiceAccountShape $serviceAccount */
+            $serviceAccount = Json::decode($googleApplicationCredentials, true);
+
+            $this->serviceAccount = $serviceAccount;
         }
 
-        $googleApplicationCredentials = Util::getenv('GOOGLE_APPLICATION_CREDENTIALS');
-
-        if ($googleApplicationCredentials === null) {
-            return $this->serviceAccount;
-        }
-
-        return $this->serviceAccount = $this->mapServiceAccount($googleApplicationCredentials);
+        return $this->serviceAccount;
     }
 
     private function getGoogleAuthTokenCredentials(): ?FetchAuthTokenInterface
     {
-        if ($this->googleAuthTokenCredentials instanceof FetchAuthTokenInterface) {
+        if ($this->googleAuthTokenCredentials !== null) {
             return $this->googleAuthTokenCredentials;
         }
 
         $serviceAccount = $this->getServiceAccount();
 
         if ($serviceAccount !== null) {
-            return $this->googleAuthTokenCredentials = new ServiceAccountCredentials(
-                self::API_CLIENT_SCOPES,
-                $this->normalizeServiceAccount($serviceAccount),
-            );
+            return $this->googleAuthTokenCredentials = new ServiceAccountCredentials(self::API_CLIENT_SCOPES, $serviceAccount);
         }
 
         try {
@@ -757,23 +746,5 @@ final class Factory
         } catch (Throwable) {
             return null;
         }
-    }
-
-    private function mapServiceAccount(mixed $value): ServiceAccount
-    {
-        return $this->getMapper()
-            ->allowSuperfluousKeys()
-            ->snakeToCamelCase()
-            ->map(ServiceAccount::class, Source::parse($value));
-    }
-
-    /**
-     * @return array<non-empty-string, mixed>
-     */
-    private function normalizeServiceAccount(ServiceAccount $serviceAccount): array
-    {
-        return $this->getNormalizer()
-            ->camelToSnakeCase()
-            ->toArray($serviceAccount);
     }
 }

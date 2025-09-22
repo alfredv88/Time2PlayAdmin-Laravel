@@ -19,10 +19,12 @@ use Throwable;
  */
 final class ApiClient
 {
+    private readonly AppCheckApiExceptionConverter $errorHandler;
+
     public function __construct(
         private readonly ClientInterface $client,
-        private readonly AppCheckApiExceptionConverter $errorHandler,
     ) {
+        $this->errorHandler = new AppCheckApiExceptionConverter();
     }
 
     /**
