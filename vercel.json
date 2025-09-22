@@ -1,0 +1,23 @@
+{
+  "version": 2,
+  "builds": [
+    {
+      "src": "public/index.php",
+      "use": "@vercel/php"
+    }
+  ],
+  "routes": [
+    {
+      "src": "/(.*)",
+      "dest": "public/index.php"
+    }
+  ],
+  "env": {
+    "APP_ENV": "production",
+    "APP_DEBUG": "false",
+    "APP_KEY": "base64:XpTaMTFrSmeqYsCdxrJhiEBZXqkVu7r6mg1S72gqJ9A=",
+    "DB_CONNECTION": "sqlite",
+    "DB_DATABASE": ":memory:",
+    "FIREBASE_CREDENTIALS_PATH": "bandmates.json"
+  }
+}
