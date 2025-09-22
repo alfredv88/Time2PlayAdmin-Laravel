@@ -375,13 +375,13 @@ class ComposerStaticInit42657a19270db087bddab9c4b04d5fd5
         ),
         'Spatie\\LaravelIgnition\\' => 
         array (
-            0 => __DIR__ . '/..' . '/spatie/laravel-ignition/src',
-            1 => __DIR__ . '/..' . '/spatie/error-solutions/legacy/laravel-ignition',
+            0 => __DIR__ . '/..' . '/spatie/error-solutions/legacy/laravel-ignition',
+            1 => __DIR__ . '/..' . '/spatie/laravel-ignition/src',
         ),
         'Spatie\\Ignition\\' => 
         array (
-            0 => __DIR__ . '/..' . '/spatie/ignition/src',
-            1 => __DIR__ . '/..' . '/spatie/error-solutions/legacy/ignition',
+            0 => __DIR__ . '/..' . '/spatie/error-solutions/legacy/ignition',
+            1 => __DIR__ . '/..' . '/spatie/ignition/src',
         ),
         'Spatie\\FlareClient\\' => 
         array (
@@ -765,6 +765,7 @@ class ComposerStaticInit42657a19270db087bddab9c4b04d5fd5
         'App\\Providers\\EventServiceProvider' => __DIR__ . '/../..' . '/app/Providers/EventServiceProvider.php',
         'App\\Providers\\RouteServiceProvider' => __DIR__ . '/../..' . '/app/Providers/RouteServiceProvider.php',
         'App\\Services\\FirebaseService' => __DIR__ . '/../..' . '/app/Services/FirebaseService.php',
+        'App\\Services\\GoogleAccessToken' => __DIR__ . '/../..' . '/app/Services/GoogleAccessToken.php',
         'Attribute' => __DIR__ . '/..' . '/symfony/polyfill-php80/Resources/stubs/Attribute.php',
         'Beste\\Cache\\CacheItem' => __DIR__ . '/..' . '/beste/in-memory-cache/src/CacheItem.php',
         'Beste\\Cache\\CacheKey' => __DIR__ . '/..' . '/beste/in-memory-cache/src/CacheKey.php',

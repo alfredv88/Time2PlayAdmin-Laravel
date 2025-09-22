@@ -31,6 +31,7 @@ return array(
     'App\\Providers\\EventServiceProvider' => $baseDir . '/app/Providers/EventServiceProvider.php',
     'App\\Providers\\RouteServiceProvider' => $baseDir . '/app/Providers/RouteServiceProvider.php',
     'App\\Services\\FirebaseService' => $baseDir . '/app/Services/FirebaseService.php',
+    'App\\Services\\GoogleAccessToken' => $baseDir . '/app/Services/GoogleAccessToken.php',
     'Attribute' => $vendorDir . '/symfony/polyfill-php80/Resources/stubs/Attribute.php',
     'Beste\\Cache\\CacheItem' => $vendorDir . '/beste/in-memory-cache/src/CacheItem.php',
     'Beste\\Cache\\CacheKey' => $vendorDir . '/beste/in-memory-cache/src/CacheKey.php',
