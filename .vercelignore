@@ -13,4 +13,3 @@ phpunit.xml
 .editorconfig
 .gitignore
 README.md
-vendor
