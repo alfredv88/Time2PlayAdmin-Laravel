@@ -20,10 +20,5 @@
     "FIREBASE_CREDENTIALS": "bandmates.json",
     "FIREBASE_DATABASE_URL": "https://time2play-ed370-default-rtdb.firebaseio.com",
     "FIREBASE_STORAGE_DEFAULT_BUCKET": "time2play-ed370.appspot.com"
-  },
-  "functions": {
-    "public/index.php": {
-      "runtime": "php8.1"
-    }
   }
 }
